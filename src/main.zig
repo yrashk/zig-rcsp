@@ -327,6 +327,9 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
 
         /// Create a strong clone
         pub fn strongClone(self: *const Self) Self {
+            // the reason we're not doing a clampedIncrement here (as we do in `Weak`)
+            // is that the presence of non-null `self.inner` is already a guarantee that
+            // there's at least one strong clone present (`self`)
             const prev = Ops.increment(&self.inner.?.*.strong_ctr);
             if (prev == Ops.MAX) {
                 @panic("strong counter has been saturated");

@@ -225,7 +225,7 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
     const Inner = struct {
         val: T,
         strong_ctr: usize = 1,
-        weak_ctr: usize = 0,
+        weak_ctr: usize = 1,
         allocator: *std.mem.Allocator,
     };
     return struct {
@@ -285,7 +285,7 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
 
             /// Number of weak clones
             pub inline fn weakCount(self: SelfWeak) usize {
-                return Ops.load(&self.inner.?.*.weak_ctr);
+                return Ops.load(&self.inner.?.*.weak_ctr) - 1;
             }
 
             /// Deinitialize weak clone
@@ -294,14 +294,12 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
             /// deallocate it if it is the last clone (both strong and weak)
             pub fn deinit(self: *SelfWeak) void {
                 const cw_ = Ops.decrement(&self.inner.?.*.weak_ctr);
-                const c = Ops.load(&self.inner.?.*.strong_ctr);
-                const cw = Ops.load(&self.inner.?.*.weak_ctr);
                 var p = self.inner.?;
                 // incapacitate self (useful methods will now panic)
                 self.inner = null;
-                // if weak counter was not saturated and there are
-                // no strong clones,
-                if (c == 0 and cw == 0 and cw_ > 0) {
+                // if weak counter was not saturated
+                if (cw_ == 1) {
+                    @fence(.Acquire);
                     // then we can deallocate
                     p.*.allocator.destroy(p);
                 }
@@ -360,7 +358,7 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
 
         /// Number of weak clones
         pub inline fn weakCount(self: Self) usize {
-            return Ops.load(&self.inner.?.*.weak_ctr);
+            return Ops.load(&self.inner.?.*.weak_ctr) - 1;
         }
 
         /// Const pointer to the value
@@ -406,20 +404,19 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
         /// clones present)
         pub fn deinitWithCallback(self: *Self, comptime C: type, context: C, deinitializer: ?fn (*T, C) void) void {
             const c_ = Ops.decrement(&self.inner.?.*.strong_ctr);
-            const c = Ops.load(&self.inner.?.*.strong_ctr);
-            const cw = Ops.load(&self.inner.?.*.weak_ctr);
+            @fence(.Acquire);
             var p = self.inner.?;
             // incapacitate self (useful methods will now panic)
             self.inner = null;
-            // if the strong counter was not saturated and
-            // the new effective count is zero, then we're...
-            if (c == 0 and c_ > 0) {
+            if (c_ == 1) {
                 // ...ready to deinitialize the value
                 if (deinitializer) |deinit_fn| {
                     deinit_fn(&p.*.val, context);
                 }
+                const cw = Ops.decrement(&p.*.weak_ctr);
                 // also, if there are no outstanding weak counters,
-                if (cw == 0) {
+                if (cw == 1) {
+                    @fence(.Acquire);
                     // then deallocate
                     p.*.allocator.destroy(p);
                 }

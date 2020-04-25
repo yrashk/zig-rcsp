@@ -28,13 +28,9 @@ VARIABLES \* strong counter as per algorithm
           \* program counter for strong clones
           strongPc,
           \* program counter for weak clones
-          weakPc,
-          \* temporary storage used by strong clones
-          strongScratchpad,
-          \* temporary storage used by weak clones
-          weakScratchpad
+          weakPc
 
-vars == << strong, weak, strongCtr, weakCtr, allocated, initialized, strongPc, weakPc, strongScratchpad, weakScratchpad >>
+vars == << strong, weak, strongCtr, weakCtr, allocated, initialized, strongPc, weakPc >>
 
 \* Ensures variables stay within their bounds
 TypeOK == /\ strong >= 0 /\ strong <= MaxStrongClones
@@ -59,8 +55,6 @@ Init == /\ strong = 1
         \* the mere act of RcSp creation establishes one strong clone
         /\ strongPc = [[ x \in (1..MaxStrongClones) |-> "none" ] EXCEPT ![1] = "ready"]
         /\ weakPc = [ x \in (1..MaxWeakClones) |-> "none"]
-        /\ strongScratchpad = [ x \in (1..MaxStrongClones) |-> <<>> ]
-        /\ weakScratchpad = [ x \in (1..MaxWeakClones) |-> <<>> ]
        
 
 \* Clone strong clone from a strong clone
@@ -71,7 +65,7 @@ StrongClone(i) == \/ /\ MaxStrongClones - strongCtr > 0 \* this condition is jus
                      /\ strong' = strong + 1
                      /\ strongCtr' = strongCtr + 1
                      /\ strongPc' = [strongPc EXCEPT ![strongCtr'] = "ready"]
-                     /\ UNCHANGED << weak, weakCtr, allocated, initialized, weakPc, strongScratchpad, weakScratchpad >>
+                     /\ UNCHANGED << weak, weakCtr, allocated, initialized, weakPc >>
 
 \* Clone weak clone from a strong clone
 WeakClone(i) == \/ /\ MaxWeakClones - weakCtr - 1 > 0  \* this condition is just to give the model a boundary
@@ -79,7 +73,7 @@ WeakClone(i) == \/ /\ MaxWeakClones - weakCtr - 1 > 0  \* this condition is just
                    /\ weak' = weak + 1
                    /\ weakCtr' = weakCtr + 1
                    /\ weakPc' = [weakPc EXCEPT ![weakCtr'] = "ready"]
-                   /\ UNCHANGED << strong, strongCtr, allocated, initialized, strongPc, strongScratchpad, weakScratchpad >>
+                   /\ UNCHANGED << strong, strongCtr, allocated, initialized, strongPc >>
 
 \* Clone strong clone from a weak clone
 StrongWeakClone(i) == \/ /\ MaxStrongClones - strongCtr > 0 \* this condition is just to give the model a boundary
@@ -89,7 +83,7 @@ StrongWeakClone(i) == \/ /\ MaxStrongClones - strongCtr > 0 \* this condition is
                          /\ strong' = strong + 1
                          /\ strongCtr' = strongCtr + 1
                          /\ strongPc' = [strongPc EXCEPT ![strongCtr'] = "ready"]
-                         /\ UNCHANGED << weak, weakCtr, allocated, initialized, weakPc, strongScratchpad, weakScratchpad >>
+                         /\ UNCHANGED << weak, weakCtr, allocated, initialized, weakPc >>
 
 \* Clone weak clone from a weak clone
 WeakWeakClone(i) == \/ /\ MaxWeakClones - weakCtr - 1 > 0  \* this condition is just to give the model a boundary
@@ -97,41 +91,40 @@ WeakWeakClone(i) == \/ /\ MaxWeakClones - weakCtr - 1 > 0  \* this condition is 
                        /\ weak' = weak + 1
                        /\ weakCtr' = weakCtr + 1
                        /\ weakPc' = [weakPc EXCEPT ![weakCtr'] = "ready"]
-                       /\ UNCHANGED << strong, strongCtr, allocated, initialized, strongPc, strongScratchpad, weakScratchpad >>
+                       /\ UNCHANGED << strong, strongCtr, allocated, initialized, strongPc >>
       
 \* Drop strong clone
 DropStrong(i) == \/ /\ strongPc[i] = "ready"
                     /\ strong' = IF strong = 0 THEN 0 ELSE strong - 1
                     /\ strongPc' = [strongPc EXCEPT ![i] = IF strong = 1 THEN "deinit" ELSE "deinitialized"]
-                    /\ strongScratchpad' = [strongScratchpad EXCEPT ![i] = << strong >>]
-                    /\ UNCHANGED << weak, allocated, initialized, weakPc, weakScratchpad, strongCtr, weakCtr >>
+                    /\ UNCHANGED << weak, allocated, initialized, weakPc, strongCtr, weakCtr >>
                  \/ /\ strongPc[i] = "deinit"
-                    \* deinitialize if previous strong counter value was 1
-                    /\ initialized' = IF strongScratchpad[i][1] = 1 THEN initialized - 1 ELSE initialized
+                    \* deinitialize
+                    /\ initialized' = initialized - 1
                     /\ strongPc' = [strongPc EXCEPT ![i] = "subWeak" ]
-                    /\ UNCHANGED << strong, weak, allocated, weakPc, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>   
+                    /\ UNCHANGED << strong, weak, allocated, weakPc, strongCtr, weakCtr >>   
                  \/ /\ strongPc[i] = "subWeak"
                     /\ weak' = IF weak = 0 THEN 0 ELSE weak - 1
                     /\ strongPc' = [strongPc EXCEPT ![i] = IF weak = 1 THEN "deallocate" ELSE (* `inner <- null` *) "deinitialized"]
-                    /\ UNCHANGED << strong, initialized, allocated, weakPc, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>
+                    /\ UNCHANGED << strong, initialized, allocated, weakPc, strongCtr, weakCtr >>
                  \/ /\ strongPc[i] = "deallocate"   
                     \* deallocate if this was there was only was [virtual] weak clone left
                     /\ allocated' = allocated - 1
                     \* `inner <- null`
                     /\ strongPc' = [strongPc EXCEPT ![i] = "deinitialized"]
-                    /\ UNCHANGED << strong, weak, initialized, weakPc, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>
+                    /\ UNCHANGED << strong, weak, initialized, weakPc, strongCtr, weakCtr >>
 
 \* Drop weak clone
 DropWeak(i) == \/ /\ weakPc[i] = "ready"
                   /\ weak' = IF weak = 0 THEN 0 ELSE weak - 1
                   /\ weakPc' = [weakPc EXCEPT ![i] = IF weak = 1 THEN "deinit" ELSE (* \* `inner <- null` *) "deinitialized" ]
-                  /\ UNCHANGED << strong, strongPc, initialized, allocated, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>
+                  /\ UNCHANGED << strong, strongPc, initialized, allocated, strongCtr, weakCtr >>
                \/ /\ weakPc[i] = "deinit"
                   \* if only the very last [virtual] weak clone left
                   /\ allocated' = allocated - 1
                   \* `inner <- null`
                   /\ weakPc' = [weakPc EXCEPT ![i] = "deinitialized"]
-                  /\ UNCHANGED << weak, strong, strongPc, initialized, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>
+                  /\ UNCHANGED << weak, strong, strongPc, initialized, strongCtr, weakCtr >>
 
 Next == \/ \E i \in 1..strongCtr: StrongClone(i)
         \/ \E i \in 1..strongCtr: WeakClone(i)

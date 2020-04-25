@@ -47,8 +47,8 @@ TypeOK == /\ strong >= 0 /\ strong <= MaxStrongClones
           \* if it ever reaches below 0, there has been a double-deinit
           \* and 2+ is also nonsense
           /\ initialized \in {1, 0}
-          /\ \A i \in 1..strong: strongPc[i] \in {"none", "ready", "subWeak", "deinit", "deinitialized"}
-          /\ \A i \in 1..weak: weakPc[i] \in {"none", "ready", "deinitialized"}
+          /\ \A i \in 1..strong: strongPc[i] \in {"none", "ready", "subWeak", "deinit", "deallocate", "deinitialized"}
+          /\ \A i \in 1..weak: weakPc[i] \in {"none", "deinit", "ready", "deinitialized"}
           
 Init == /\ strong = 1
         /\ weak = 1
@@ -112,20 +112,26 @@ DropStrong(i) == \/ /\ strongPc[i] = "ready"
                     /\ UNCHANGED << strong, weak, allocated, weakPc, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>   
                  \/ /\ strongPc[i] = "subWeak"
                     /\ weak' = IF weak = 0 THEN 0 ELSE weak - 1
+                    /\ strongPc' = [strongPc EXCEPT ![i] = IF weak = 1 THEN "deallocate" ELSE (* `inner <- null` *) "deinitialized"]
+                    /\ UNCHANGED << strong, initialized, allocated, weakPc, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>
+                 \/ /\ strongPc[i] = "deallocate"   
                     \* deallocate if this was there was only was [virtual] weak clone left
-                    /\ allocated' = IF weak = 1 THEN allocated - 1 ELSE allocated
+                    /\ allocated' = allocated - 1
                     \* `inner <- null`
                     /\ strongPc' = [strongPc EXCEPT ![i] = "deinitialized"]
-                    /\ UNCHANGED << strong, initialized, weakPc, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>   
+                    /\ UNCHANGED << strong, weak, initialized, weakPc, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>
 
 \* Drop weak clone
 DropWeak(i) == \/ /\ weakPc[i] = "ready"
                   /\ weak' = IF weak = 0 THEN 0 ELSE weak - 1
+                  /\ weakPc' = [weakPc EXCEPT ![i] = IF weak = 1 THEN "deinit" ELSE (* \* `inner <- null` *) "deinitialized" ]
+                  /\ UNCHANGED << strong, strongPc, initialized, allocated, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>
+               \/ /\ weakPc[i] = "deinit"
                   \* if only the very last [virtual] weak clone left
-                  /\ allocated' = IF weak = 1 THEN allocated - 1 ELSE allocated
+                  /\ allocated' = allocated - 1
                   \* `inner <- null`
                   /\ weakPc' = [weakPc EXCEPT ![i] = "deinitialized"]
-                  /\ UNCHANGED << strong, strongPc, initialized, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>   
+                  /\ UNCHANGED << weak, strong, strongPc, initialized, strongScratchpad, weakScratchpad, strongCtr, weakCtr >>
 
 Next == \/ \E i \in 1..strongCtr: StrongClone(i)
         \/ \E i \in 1..strongCtr: WeakClone(i)

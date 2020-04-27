@@ -54,6 +54,11 @@ pub const Atomic = if (builtin.single_threaded) NonAtomic else struct {
     inline fn load(ptr: *T) T {
         return @atomicLoad(T, ptr, .SeqCst);
     }
+
+    /// Establish ordering with the counters
+    inline fn synchronize() void {
+        @fence(.Acquire);
+    }
 };
 
 test "atomic increment" {
@@ -178,6 +183,9 @@ pub const NonAtomic = struct {
     inline fn load(ptr: *T) T {
         return ptr.*;
     }
+
+    /// Establish ordering with the counters
+    inline fn synchronize() void {}
 };
 
 test "non-atomic increment" {
@@ -299,7 +307,7 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
                 self.inner = null;
                 // if weak counter was not saturated
                 if (cw_ == 1) {
-                    @fence(.Acquire);
+                    Ops.synchronize();
                     // then we can deallocate
                     p.*.allocator.destroy(p);
                 }
@@ -404,7 +412,7 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
         /// clones present)
         pub fn deinitWithCallback(self: *Self, comptime C: type, context: C, deinitializer: ?fn (*T, C) void) void {
             const c_ = Ops.decrement(&self.inner.?.*.strong_ctr);
-            @fence(.Acquire);
+            Ops.synchronize();
             var p = self.inner.?;
             // incapacitate self (useful methods will now panic)
             self.inner = null;
@@ -416,7 +424,7 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
                 const cw = Ops.decrement(&p.*.weak_ctr);
                 // also, if there are no outstanding weak counters,
                 if (cw == 1) {
-                    @fence(.Acquire);
+                    Ops.synchronize();
                     // then deallocate
                     p.*.allocator.destroy(p);
                 }

@@ -238,7 +238,7 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
     };
     return struct {
         const Strong = @This();
-        const Weak = struct {
+        pub const Weak = struct {
             inner: ?*Inner,
             pub const Type = T;
 
@@ -300,7 +300,9 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
             ///
             /// Will never deinitialize the value but will
             /// deallocate it if it is the last clone (both strong and weak)
-            pub fn deinit(self: *SelfWeak) void {
+            ///
+            /// Returns true if the value was deallocated
+            pub fn deinit(self: *SelfWeak) bool {
                 const cw_ = Ops.decrement(&self.inner.?.*.weak_ctr);
                 var p = self.inner.?;
                 // incapacitate self (useful methods will now panic)
@@ -310,7 +312,9 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
                     Ops.synchronize();
                     // then we can deallocate
                     p.*.allocator.destroy(p);
+                    return true;
                 }
+                return false;
             }
         };
 
@@ -400,8 +404,10 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
         /// Deinitialize the shared pointer
         ///
         /// Will deallocate its initial allocation
-        pub fn deinit(self: *Self) void {
-            self.deinitWithCallback(?void, null, null);
+        ///
+        /// Return true if the value was deallocated
+        pub fn deinit(self: *Self) bool {
+            return self.deinitWithCallback(?void, null, null);
         }
 
         /// Deinitialize the shared pointer with a callback
@@ -410,7 +416,9 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
         /// (if there are no other strong clones present) and then
         /// deallocate its initial allocation (if there are no weak
         /// clones present)
-        pub fn deinitWithCallback(self: *Self, comptime C: type, context: C, deinitializer: ?fn (*T, C) void) void {
+        ///
+        /// Return true if the value was deallocated
+        pub fn deinitWithCallback(self: *Self, comptime C: type, context: C, deinitializer: ?fn (*T, C) void) bool {
             const c_ = Ops.decrement(&self.inner.?.*.strong_ctr);
             Ops.synchronize();
             var p = self.inner.?;
@@ -427,21 +435,23 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
                     Ops.synchronize();
                     // then deallocate
                     p.*.allocator.destroy(p);
+                    return true;
                 }
             }
+            return false;
         }
     };
 }
 
 test "initializing a shared pointer with a value" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
-    defer v.deinit();
+    defer _ = v.deinit();
     testing.expectEqual(v.ptr().*, 10);
 }
 
 test "unsafely mutating shared pointer's value" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
-    defer v.deinit();
+    defer _ = v.deinit();
     const ptr = v.unsafePtr();
     ptr.* = 20;
     testing.expectEqual(v.ptr().*, 20);
@@ -454,7 +464,7 @@ test "safely mutating shared pointer's value" {
     };
     var mutex = MU128{ .value = 10 };
     var v = try RcSharedPointer(MU128, NonAtomic).init(mutex, std.heap.page_allocator);
-    defer v.deinit();
+    defer _ = v.deinit();
     const ptr = v.unsafePtr();
     {
         const lock = ptr.*.mutex.acquire();
@@ -469,17 +479,17 @@ fn deinit_copy(val: *u128, ctx: *u128) void {
 test "deinitializing a shared pointer with a callback" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
     var v1: u128 = 0;
-    v.deinitWithCallback(*u128, &v1, deinit_copy);
+    _ = v.deinitWithCallback(*u128, &v1, deinit_copy);
     testing.expectEqual(v1, 10);
 }
 
 test "strong-cloning a shared pointer" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
-    defer v.deinit();
+    defer _ = v.deinit();
     testing.expectEqual(@intCast(usize, 1), v.strongCount());
     var v1 = v.strongClone();
     testing.expectEqual(@intCast(usize, 2), v.strongCount());
-    v1.deinit();
+    _ = v1.deinit();
     testing.expectEqual(@intCast(usize, 1), v.strongCount());
 }
 
@@ -490,43 +500,43 @@ test "deinitializing a shared pointer with a callback and strong copies" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
     var r: u128 = 0;
     var v1 = v.strongClone();
-    v.deinitWithCallback(*u128, &r, deinit_incr);
-    v1.deinitWithCallback(*u128, &r, deinit_incr);
+    testing.expectEqual(false, v.deinitWithCallback(*u128, &r, deinit_incr));
+    testing.expectEqual(true, v1.deinitWithCallback(*u128, &r, deinit_incr));
     testing.expectEqual(r, 10); // not 20 because the callback should only be called once
 }
 
 test "weak-cloning a shared pointer" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
-    defer v.deinit();
+    defer _ = v.deinit();
     testing.expectEqual(@intCast(usize, 0), v.weakCount());
     var v1 = v.weakClone();
     testing.expectEqual(@intCast(usize, 1), v.weakCount());
-    v1.deinit();
+    _ = v1.deinit();
     testing.expectEqual(@intCast(usize, 0), v.weakCount());
 }
 
 test "weak-cloning a shared pointer" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
-    defer v.deinit();
+    defer _ = v.deinit();
     testing.expectEqual(@intCast(usize, 0), v.weakCount());
     var v1 = v.weakClone();
     testing.expectEqual(@intCast(usize, 1), v.weakCount());
     var v2 = v.weakClone();
     testing.expectEqual(@intCast(usize, 2), v.weakCount());
-    v1.deinit();
-    v2.deinit();
+    _ = v1.deinit();
+    _ = v2.deinit();
     testing.expectEqual(@intCast(usize, 0), v.weakCount());
 }
 
 test "strong-cloning a weak clone" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
-    defer v.deinit();
+    defer _ = v.deinit();
     testing.expectEqual(@intCast(usize, 0), v.weakCount());
     var v1 = v.weakClone();
     testing.expectEqual(@intCast(usize, 1), v.weakCount());
     var v2 = v1.strongClone().?;
-    defer v2.deinit();
-    v1.deinit();
+    defer _ = v2.deinit();
+    _ = v1.deinit();
     testing.expectEqual(@intCast(usize, 0), v.weakCount());
     testing.expectEqual(@intCast(usize, 2), v.strongCount());
 }
@@ -535,8 +545,118 @@ test "strong-cloning a weak clone with no other strong clones" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
     var v1 = v.weakClone();
     testing.expectEqual(@intCast(usize, 1), v.weakCount());
-    v.deinit();
+    _ = v.deinit();
     testing.expectEqual(@intCast(usize, 0), v1.strongCount());
     testing.expect(v1.strongClone() == null);
-    v1.deinit();
+    _ = v1.deinit();
+}
+
+var deinit50c: usize = 0;
+var deinit50s = false;
+
+fn deinit_incr50(val: *u128, ctx: *usize) void {
+    ctx.* += 1;
+}
+
+fn deinit50(val: *[50]RcSharedPointer(u128, Atomic)) void {
+    var i: usize = 0;
+    var r: usize = 0;
+    // wait until a signal to go is given
+    while (!@atomicLoad(bool, &deinit50s, .SeqCst)) {}
+    while (i < 50) : (i += 1) {
+        _ = val[i].deinitWithCallback(*usize, &r, deinit_incr50);
+    }
+    _ = @atomicRmw(usize, &deinit50c, .Add, @intCast(usize, r), .SeqCst);
+}
+
+// the idea here is to try and cause a race condition deinitializing
+// strong clones (only they deinitialize)
+test "deinitializing atomic reference counter" {
+    const T = RcSharedPointer(u128, Atomic);
+    var c: usize = 0;
+    // try this many times
+    while (c < 100_000) : (c += 1) {
+        @atomicStore(usize, &deinit50c, 0, .SeqCst);
+        var v = try T.init(10, std.heap.page_allocator);
+        var i: usize = 0;
+        var clones = try std.ArrayList(T).initCapacity(std.heap.page_allocator, 150);
+        try clones.append(v);
+        while (i < 149) : (i += 1) {
+            try clones.append(v.strongClone());
+        }
+
+        // race three threads to deinitialize
+        @atomicStore(bool, &deinit50s, false, .SeqCst);
+        const t1 = try std.Thread.spawn(clones.items[0..50], deinit50);
+        const t2 = try std.Thread.spawn(clones.items[50..100], deinit50);
+        const t3 = try std.Thread.spawn(clones.items[100..150], deinit50);
+        @atomicStore(bool, &deinit50s, true, .SeqCst);
+        t1.wait();
+        t2.wait();
+        t3.wait();
+
+        // ensure that we only deinitialized once
+        testing.expectEqual(@intCast(usize, 1), @atomicLoad(usize, &deinit50c, .SeqCst));
+    }
+}
+
+var dealloc50c: usize = 0;
+
+fn deinit50_alloc(val: *[50]RcSharedPointer(u128, Atomic)) void {
+    var i: usize = 0;
+    // wait until a signal to go is given
+    while (!@atomicLoad(bool, &deinit50s, .SeqCst)) {}
+    while (i < 50) : (i += 1) {
+        if (val[i].deinit()) {
+            _ = @atomicRmw(usize, &dealloc50c, .Add, @intCast(usize, 1), .SeqCst);
+        }
+    }
+}
+
+fn deinit50w_alloc(val: *[50]RcSharedPointer(u128, Atomic).Weak) void {
+    var i: usize = 0;
+    // wait until a signal to go is given
+    while (!@atomicLoad(bool, &deinit50s, .SeqCst)) {}
+    while (i < 50) : (i += 1) {
+        if (val[i].deinit()) {
+            _ = @atomicRmw(usize, &dealloc50c, .Add, @intCast(usize, 1), .SeqCst);
+        }
+    }
+}
+
+// the idea here is to try and cause a race condition deallocating
+// strong and weak clones
+test "deallocating atomic reference counter" {
+    const T = RcSharedPointer(u128, Atomic);
+    var c: usize = 0;
+    // try this many times
+    while (c < 100_000) : (c += 1) {
+        @atomicStore(usize, &dealloc50c, 0, .SeqCst);
+        var v = try T.init(10, std.heap.page_allocator);
+        var i: usize = 0;
+        var clones = try std.ArrayList(T).initCapacity(std.heap.page_allocator, 100);
+        try clones.append(v);
+        while (i < 99) : (i += 1) {
+            try clones.append(v.strongClone());
+        }
+
+        var wclones = try std.ArrayList(T.Weak).initCapacity(std.heap.page_allocator, 50);
+        i = 0;
+        while (i < 50) : (i += 1) {
+            try wclones.append(v.weakClone());
+        }
+
+        // race three threads to deallocate
+        @atomicStore(bool, &deinit50s, false, .SeqCst);
+        const t1 = try std.Thread.spawn(clones.items[0..50], deinit50_alloc);
+        const t2 = try std.Thread.spawn(clones.items[50..100], deinit50_alloc);
+        const t3 = try std.Thread.spawn(wclones.items[0..50], deinit50w_alloc);
+        @atomicStore(bool, &deinit50s, true, .SeqCst);
+        t1.wait();
+        t2.wait();
+        t3.wait();
+
+        // ensure that we only deallocated once
+        testing.expectEqual(@intCast(usize, 1), @atomicLoad(usize, &dealloc50c, .SeqCst));
+    }
 }

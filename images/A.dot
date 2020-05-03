@@ -1,0 +1,25 @@
+strict digraph DiskGraph {
+nodesep=0.35;
+subgraph cluster_graph {
+color="white";
+-6973773435117654495 [label="/\\ weak = 1\n/\\ weakCtr = 0\n/\\ strongCtr = 1\n/\\ weakPc = <<\"none\">>\n/\\ strong = 1\n/\\ allocated = 1\n/\\ initialized = 1\n/\\ strongPc = <<\"ready\">>",style = filled]
+-6973773435117654495 -> -2988752816431135645 [label="",color="black",fontcolor="black"];
+-2988752816431135645 [label="/\\ weak = 1\n/\\ weakCtr = 0\n/\\ strongCtr = 1\n/\\ weakPc = <<\"none\">>\n/\\ strong = 0\n/\\ allocated = 1\n/\\ initialized = 1\n/\\ strongPc = <<\"deinit\">>"];
+-6973773435117654495 -> -6973773435117654495 [label="",color="black",fontcolor="black"];
+-2988752816431135645 -> -5486833211561976656 [label="",color="black",fontcolor="black"];
+-5486833211561976656 [label="/\\ weak = 1\n/\\ weakCtr = 0\n/\\ strongCtr = 1\n/\\ weakPc = <<\"none\">>\n/\\ strong = 0\n/\\ allocated = 1\n/\\ initialized = 0\n/\\ strongPc = <<\"subWeak\">>"];
+-2988752816431135645 -> -2988752816431135645 [label="",color="black",fontcolor="black"];
+-5486833211561976656 -> -576548152601975219 [label="",color="black",fontcolor="black"];
+-576548152601975219 [label="/\\ weak = 0\n/\\ weakCtr = 0\n/\\ strongCtr = 1\n/\\ weakPc = <<\"none\">>\n/\\ strong = 0\n/\\ allocated = 1\n/\\ initialized = 0\n/\\ strongPc = <<\"deallocate\">>"];
+-5486833211561976656 -> -5486833211561976656 [label="",color="black",fontcolor="black"];
+-576548152601975219 -> 403334766286510968 [label="",color="black",fontcolor="black"];
+403334766286510968 [label="/\\ weak = 0\n/\\ weakCtr = 0\n/\\ strongCtr = 1\n/\\ weakPc = <<\"none\">>\n/\\ strong = 0\n/\\ allocated = 0\n/\\ initialized = 0\n/\\ strongPc = <<\"deinitialized\">>"];
+-576548152601975219 -> -576548152601975219 [label="",color="black",fontcolor="black"];
+403334766286510968 -> 403334766286510968 [label="",color="black",fontcolor="black"];
+{rank = same; -6973773435117654495;}
+{rank = same; -2988752816431135645;}
+{rank = same; -5486833211561976656;}
+{rank = same; -576548152601975219;}
+{rank = same; 403334766286510968;}
+}
+}

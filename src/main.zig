@@ -27,27 +27,32 @@ pub const Atomic = if (builtin.single_threaded) NonAtomic else struct {
 
     /// Saturating increment
     inline fn increment(ptr: *T) T {
-        const val = @atomicLoad(usize, ptr, .Acquire);
-        const incr: T = if (val == MAX) 0 else 1;
-        return @atomicRmw(T, ptr, .Add, incr, .Release);
+        var val = @atomicLoad(T, ptr, .Acquire);
+        while (@cmpxchgWeak(T, ptr, val, if (val == MAX) val else val + 1, .Release, .Monotonic)) |v| {
+            val = v;
+        }
+        return val;
     }
 
     /// Bottom-clamped saturating increment
     /// (if counter is zero, it will not be incremented)
     inline fn clampedIncrement(ptr: *T) T {
-        const val = @atomicLoad(usize, ptr, .Acquire);
-        var incr: T = if (val == MAX) 0 else 1;
-        if (val == MIN) {
-            incr = 0;
+        var val = @atomicLoad(T, ptr, .Acquire);
+        if (val > MIN) {
+            while (@cmpxchgWeak(T, ptr, val, if (val == MAX) val else val + 1, .Release, .Monotonic)) |v| {
+                val = v;
+            }
         }
-        return @atomicRmw(T, ptr, .Add, incr, .Release);
+        return val;
     }
 
     /// Saturating decrement
     inline fn decrement(ptr: *T) T {
-        const val = @atomicLoad(usize, ptr, .Acquire);
-        const decr: T = if (val == MIN) 0 else 1;
-        return @atomicRmw(T, ptr, .Sub, decr, .Release);
+        var val = @atomicLoad(T, ptr, .Acquire);
+        while (@cmpxchgWeak(T, ptr, val, if (val == MIN) val else val - 1, .Release, .Monotonic)) |v| {
+            val = v;
+        }
+        return val;
     }
 
     /// Load counter value

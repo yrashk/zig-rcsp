@@ -7,10 +7,10 @@
 //! ```
 //! const AtomicU128Counter = RcSharedPointer(u128, Atomic);
 //! var counter = AtomicU128Counter(100, std.heap.page_allocator);
-//! defer counter.deinit();
+//! _ = defer counter.deinit();
 //! var counter1 = counter.strongClone();
 //! _ = counter1.ptr();
-//! defer counter1.deinit();
+//! _ = defer counter1.deinit();
 //! ```
 
 const std = @import("std");

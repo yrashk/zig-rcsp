@@ -33,10 +33,10 @@ VARIABLES \* strong counter as per algorithm
 vars == << strong, weak, strongCtr, weakCtr, allocated, initialized, strongPc, weakPc >>
 
 \* Ensures variables stay within their bounds
-TypeOK == /\ strong >= 0 /\ strong <= MaxStrongClones
-          /\ weak >= 0 /\ weak <= MaxWeakClones
-          /\ strongCtr >=0 /\ strongCtr <= MaxStrongClones
-          /\ weakCtr >=0 /\ weakCtr <= MaxWeakClones
+TypeOK == /\ strong \in Nat
+          /\ weak \in Nat
+          /\ strongCtr \in Nat
+          /\ weakCtr \in Nat
           \* if it ever reaches below 0, there has been a double-free
           \* and 2+ is also nonsense
           /\ allocated \in {1, 0}
@@ -45,6 +45,19 @@ TypeOK == /\ strong >= 0 /\ strong <= MaxStrongClones
           /\ initialized \in {1, 0}
           /\ \A i \in 1..strong: strongPc[i] \in {"none", "ready", "subWeak", "deinit", "deallocate", "deinitialized"}
           /\ \A i \in 1..weak: weakPc[i] \in {"none", "deinit", "ready", "deinitialized"}
+
+Invariants ==
+    /\ TypeOK
+
+\* Ensures variables stay within their bounds
+ValueConstraints == 
+    /\ strong >= 0 /\ strong <= MaxStrongClones
+    /\ weak >= 0 /\ weak <= MaxWeakClones
+    /\ strongCtr >=0 /\ strongCtr <= MaxStrongClones
+    /\ weakCtr >=0 /\ weakCtr <= MaxWeakClones
+
+Constraints ==
+    /\ ValueConstraints
           
 Init == /\ strong = 1
         /\ weak = 1
@@ -147,3 +160,4 @@ Completes == <>(AllClonesDeinitialized /\ Deinitialized /\ Deallocated)
 
 
 ==================================================
+

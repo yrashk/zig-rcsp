@@ -38,10 +38,8 @@ pub const Atomic = if (builtin.single_threaded) NonAtomic else struct {
     /// (if counter is zero, it will not be incremented)
     inline fn clampedIncrement(ptr: *T) T {
         var val = @atomicLoad(T, ptr, .Acquire);
-        if (val > MIN) {
-            while (@cmpxchgWeak(T, ptr, val, if (val == MAX) val else val + 1, .Release, .Monotonic)) |v| {
-                val = v;
-            }
+        while (@cmpxchgWeak(T, ptr, val, if (val == MAX or val == MIN) val else val + 1, .Release, .Monotonic)) |v| {
+            val = v;
         }
         return val;
     }

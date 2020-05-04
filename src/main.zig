@@ -27,8 +27,8 @@ pub const Atomic = if (builtin.single_threaded) NonAtomic else struct {
 
     /// Saturating increment
     inline fn increment(ptr: *T) T {
-        var val = @atomicLoad(T, ptr, .Acquire);
-        while (@cmpxchgWeak(T, ptr, val, if (val == MAX) val else val + 1, .Release, .Monotonic)) |v| {
+        var val = @atomicLoad(T, ptr, .Monotonic);
+        while (@cmpxchgWeak(T, ptr, val, if (val == MAX) val else val + 1, .Monotonic, .Monotonic)) |v| {
             val = v;
         }
         return val;
@@ -37,8 +37,8 @@ pub const Atomic = if (builtin.single_threaded) NonAtomic else struct {
     /// Bottom-clamped saturating increment
     /// (if counter is zero, it will not be incremented)
     inline fn clampedIncrement(ptr: *T) T {
-        var val = @atomicLoad(T, ptr, .Acquire);
-        while (@cmpxchgWeak(T, ptr, val, if (val == MAX or val == MIN) val else val + 1, .Release, .Monotonic)) |v| {
+        var val = @atomicLoad(T, ptr, .Monotonic);
+        while (@cmpxchgWeak(T, ptr, val, if (val == MAX or val == MIN) val else val + 1, .Monotonic, .Monotonic)) |v| {
             val = v;
         }
         return val;

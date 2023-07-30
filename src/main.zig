@@ -66,20 +66,20 @@ pub const Atomic = if (builtin.single_threaded) NonAtomic else struct {
 
 test "atomic increment" {
     var val: usize = 0;
-    testing.expectEqual(@intCast(usize, 0), Atomic.increment(&val));
-    testing.expectEqual(@intCast(usize, 1), Atomic.load(&val));
+    testing.expectEqual(@as(usize, @intCast(0)), Atomic.increment(&val));
+    testing.expectEqual(@as(usize, @intCast(1)), Atomic.load(&val));
 }
 
 test "clamped atomic increment" {
     var val: usize = 0;
-    testing.expectEqual(@intCast(usize, 0), Atomic.clampedIncrement(&val));
-    testing.expectEqual(@intCast(usize, 0), Atomic.load(&val));
+    testing.expectEqual(@as(usize, @intCast(0)), Atomic.clampedIncrement(&val));
+    testing.expectEqual(@as(usize, @intCast(0)), Atomic.load(&val));
 }
 
 test "saturating atomic increment from max usize" {
     var val: usize = std.math.maxInt(usize);
-    testing.expectEqual(@intCast(usize, std.math.maxInt(usize)), Atomic.increment(&val));
-    testing.expectEqual(@intCast(usize, std.math.maxInt(usize)), Atomic.load(&val));
+    testing.expectEqual(@as(usize, @intCast(std.math.maxInt(usize))), Atomic.increment(&val));
+    testing.expectEqual(@as(usize, @intCast(std.math.maxInt(usize))), Atomic.load(&val));
 }
 
 fn increment100(val: *usize) void {
@@ -108,12 +108,12 @@ test "concurrent atomic increments & decrements" {
     const t2 = try std.Thread.spawn(&val, increment100);
     t1.wait();
     t2.wait();
-    testing.expectEqual(@intCast(usize, 200), Atomic.load(&val));
+    testing.expectEqual(@as(usize, @intCast(200)), Atomic.load(&val));
     const t3 = try std.Thread.spawn(&val, decrement100);
     const t4 = try std.Thread.spawn(&val, decrement100);
     t3.wait();
     t4.wait();
-    testing.expectEqual(@intCast(usize, 0), Atomic.load(&val));
+    testing.expectEqual(@as(usize, @intCast(0)), Atomic.load(&val));
 }
 
 test "saturating concurrent atomic increments" {
@@ -122,7 +122,7 @@ test "saturating concurrent atomic increments" {
     const t2 = try std.Thread.spawn(&val, increment100);
     t1.wait();
     t2.wait();
-    testing.expectEqual(@intCast(usize, std.math.maxInt(usize)), Atomic.load(&val));
+    testing.expectEqual(@as(usize, @intCast(std.math.maxInt(usize))), Atomic.load(&val));
 }
 
 test "atomic decrement" {
@@ -143,7 +143,7 @@ test "saturating concurrent atomic decrements" {
     const t2 = try std.Thread.spawn(&val, decrement100);
     t1.wait();
     t2.wait();
-    testing.expectEqual(@intCast(usize, std.math.minInt(usize)), Atomic.load(&val));
+    testing.expectEqual(@as(usize, @intCast(std.math.minInt(usize))), Atomic.load(&val));
 }
 
 /// Non-atomic counter
@@ -155,8 +155,11 @@ pub const NonAtomic = struct {
     /// Saturating increment
     inline fn increment(ptr: *T) T {
         const val = ptr.*;
-        if (@addWithOverflow(T, val, 1, ptr)) {
+        const res = @addWithOverflow(val, 1);
+        if (res[1]) {
             ptr.* = MAX;
+        } else {
+            ptr.* = res[0];
         }
         return val;
     }
@@ -167,8 +170,11 @@ pub const NonAtomic = struct {
         if (val == MIN) {
             return MIN;
         }
-        if (@addWithOverflow(T, val, 1, ptr)) {
+        const res = @addWithOverflow(val, 1);
+        if (res[1]) {
             ptr.* = MAX;
+        } else {
+            ptr.* = res[0];
         }
         return val;
     }
@@ -176,8 +182,11 @@ pub const NonAtomic = struct {
     /// Saturating decrement
     inline fn decrement(ptr: *T) T {
         const val = ptr.*;
-        if (@subWithOverflow(T, val, 1, ptr)) {
+        const res = @subWithOverflow(val, 1);
+        if (res[1]) {
             ptr.* = MIN;
+        } else {
+            ptr.* = res[0];
         }
         return val;
     }
@@ -199,8 +208,8 @@ test "non-atomic increment" {
 
 test "clamped non-atomic increment" {
     var val: usize = 0;
-    testing.expectEqual(@intCast(usize, 0), NonAtomic.clampedIncrement(&val));
-    testing.expectEqual(@intCast(usize, 0), NonAtomic.load(&val));
+    testing.expectEqual(@as(usize, @intCast(0)), NonAtomic.clampedIncrement(&val));
+    testing.expectEqual(@as(usize, @intCast(0)), NonAtomic.load(&val));
 }
 
 test "non-atomic increment from max usize" {
@@ -232,12 +241,12 @@ test "non-atomic decrement from 0" {
 /// TODO: RcSharedPointer does not properly handle the sitation
 /// when either strong or weak counter saturates at the maximum
 /// value of `usize`. Currently, it'll panic in this situation.
-pub fn RcSharedPointer(comptime T: type, Ops: type) type {
+pub fn RcSharedPointer(comptime T: type, comptime Ops: type) type {
     const Inner = struct {
         val: T,
         strong_ctr: usize = 1,
         weak_ctr: usize = 1,
-        allocator: *std.mem.Allocator,
+        allocator: std.mem.Allocator,
     };
     return struct {
         const Strong = @This();
@@ -329,7 +338,7 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
         /// Initialize the counter with a value
         ///
         /// Allocates memory to hold the value and the counter
-        pub fn init(val: T, allocator: *std.mem.Allocator) !Self {
+        pub fn init(val: T, allocator: std.mem.Allocator) !Self {
             var allocated = try allocator.create(Inner);
             allocated.* = Inner{
                 .val = val,
@@ -339,7 +348,7 @@ pub fn RcSharedPointer(comptime T: type, Ops: type) type {
         }
 
         /// Create a strong clone
-        pub fn strongClone(self: *const Self) Self {
+        pub fn strongClone(self: Self) Self {
             // the reason we're not doing a clampedIncrement here (as we do in `Weak`)
             // is that the presence of non-null `self.inner` is already a guarantee that
             // there's at least one strong clone present (`self`)
@@ -489,11 +498,11 @@ test "deinitializing a shared pointer with a callback" {
 test "strong-cloning a shared pointer" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
     defer _ = v.deinit();
-    testing.expectEqual(@intCast(usize, 1), v.strongCount());
+    testing.expectEqual(@as(usize, @intCast(1)), v.strongCount());
     var v1 = v.strongClone();
-    testing.expectEqual(@intCast(usize, 2), v.strongCount());
+    testing.expectEqual(@as(usize, @intCast(2)), v.strongCount());
     _ = v1.deinit();
-    testing.expectEqual(@intCast(usize, 1), v.strongCount());
+    testing.expectEqual(@as(usize, @intCast(1)), v.strongCount());
 }
 
 fn deinit_incr(val: *u128, ctx: *u128) void {
@@ -508,48 +517,48 @@ test "deinitializing a shared pointer with a callback and strong copies" {
     testing.expectEqual(r, 10); // not 20 because the callback should only be called once
 }
 
-test "weak-cloning a shared pointer" {
+test "weak-cloning a shared pointer (1)" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
     defer _ = v.deinit();
-    testing.expectEqual(@intCast(usize, 0), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(0)), v.weakCount());
     var v1 = v.weakClone();
-    testing.expectEqual(@intCast(usize, 1), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(1)), v.weakCount());
     _ = v1.deinit();
-    testing.expectEqual(@intCast(usize, 0), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(0)), v.weakCount());
 }
 
-test "weak-cloning a shared pointer" {
+test "weak-cloning a shared pointer (2)" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
     defer _ = v.deinit();
-    testing.expectEqual(@intCast(usize, 0), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(0)), v.weakCount());
     var v1 = v.weakClone();
-    testing.expectEqual(@intCast(usize, 1), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(1)), v.weakCount());
     var v2 = v.weakClone();
-    testing.expectEqual(@intCast(usize, 2), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(2)), v.weakCount());
     _ = v1.deinit();
     _ = v2.deinit();
-    testing.expectEqual(@intCast(usize, 0), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(0)), v.weakCount());
 }
 
 test "strong-cloning a weak clone" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
     defer _ = v.deinit();
-    testing.expectEqual(@intCast(usize, 0), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(0)), v.weakCount());
     var v1 = v.weakClone();
-    testing.expectEqual(@intCast(usize, 1), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(1)), v.weakCount());
     var v2 = v1.strongClone().?;
     defer _ = v2.deinit();
     _ = v1.deinit();
-    testing.expectEqual(@intCast(usize, 0), v.weakCount());
-    testing.expectEqual(@intCast(usize, 2), v.strongCount());
+    testing.expectEqual(@as(usize, @intCast(0)), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(2)), v.strongCount());
 }
 
 test "strong-cloning a weak clone with no other strong clones" {
     var v = try RcSharedPointer(u128, NonAtomic).init(10, std.heap.page_allocator);
     var v1 = v.weakClone();
-    testing.expectEqual(@intCast(usize, 1), v.weakCount());
+    testing.expectEqual(@as(usize, @intCast(1)), v.weakCount());
     _ = v.deinit();
-    testing.expectEqual(@intCast(usize, 0), v1.strongCount());
+    testing.expectEqual(@as(usize, @intCast(0)), v1.strongCount());
     testing.expect(v1.strongClone() == null);
     _ = v1.deinit();
 }
@@ -558,6 +567,7 @@ var deinit50c: usize = 0;
 var deinit50s = false;
 
 fn deinit_incr50(val: *u128, ctx: *usize) void {
+    _ = val;
     ctx.* += 1;
 }
 
@@ -569,7 +579,7 @@ fn deinit50(val: *[50]RcSharedPointer(u128, Atomic)) void {
     while (i < 50) : (i += 1) {
         _ = val[i].deinitWithCallback(*usize, &r, deinit_incr50);
     }
-    _ = @atomicRmw(usize, &deinit50c, .Add, @intCast(usize, r), .SeqCst);
+    _ = @atomicRmw(usize, &deinit50c, .Add, @as(usize, @intCast(r)), .SeqCst);
 }
 
 // the idea here is to try and cause a race condition deinitializing
@@ -599,7 +609,7 @@ test "deinitializing atomic reference counter" {
         t3.wait();
 
         // ensure that we only deinitialized once
-        testing.expectEqual(@intCast(usize, 1), @atomicLoad(usize, &deinit50c, .SeqCst));
+        testing.expectEqual(@as(usize, @intCast(1)), @atomicLoad(usize, &deinit50c, .SeqCst));
     }
 }
 
@@ -611,7 +621,7 @@ fn deinit50_alloc(val: *[50]RcSharedPointer(u128, Atomic)) void {
     while (!@atomicLoad(bool, &deinit50s, .SeqCst)) {}
     while (i < 50) : (i += 1) {
         if (val[i].deinit()) {
-            _ = @atomicRmw(usize, &dealloc50c, .Add, @intCast(usize, 1), .SeqCst);
+            _ = @atomicRmw(usize, &dealloc50c, .Add, @as(usize, @intCast(1)), .SeqCst);
         }
     }
 }
@@ -622,7 +632,7 @@ fn deinit50w_alloc(val: *[50]RcSharedPointer(u128, Atomic).Weak) void {
     while (!@atomicLoad(bool, &deinit50s, .SeqCst)) {}
     while (i < 50) : (i += 1) {
         if (val[i].deinit()) {
-            _ = @atomicRmw(usize, &dealloc50c, .Add, @intCast(usize, 1), .SeqCst);
+            _ = @atomicRmw(usize, &dealloc50c, .Add, @as(usize, @intCast(1)), .SeqCst);
         }
     }
 }
@@ -660,6 +670,6 @@ test "deallocating atomic reference counter" {
         t3.wait();
 
         // ensure that we only deallocated once
-        testing.expectEqual(@intCast(usize, 1), @atomicLoad(usize, &dealloc50c, .SeqCst));
+        testing.expectEqual(@as(usize, @intCast(1)), @atomicLoad(usize, &dealloc50c, .SeqCst));
     }
 }
